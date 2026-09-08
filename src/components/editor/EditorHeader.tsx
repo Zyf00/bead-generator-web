@@ -1,6 +1,8 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
+import NextImage from 'next/image';
 import {
   Undo2,
   Redo2,
@@ -67,14 +69,25 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
     <header className="header-bar-h w-full bg-white border-b border-slate-200 px-4 flex items-center justify-between z-10 select-none">
       {/* 左侧：Logo 与作品名 */}
       <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-orange-500 flex items-center justify-center text-white font-bold text-sm shadow-sm">
-            <span className="leading-none">豆</span>
-          </div>
-          <span className="font-bold text-slate-800 text-base tracking-wide">
+        {/* 品牌 Logo 与回首页入口 */}
+        <Link
+          href="/"
+          title="返回首页"
+          className="flex items-center gap-2.5 group transition-opacity hover:opacity-90"
+        >
+          {/* 最新透明底无黑描边拼豆 Logo */}
+          <NextImage
+            src="/brand/logo-v2.png"
+            alt="拼豆生成器 Logo"
+            width={32}
+            height={32}
+            className="w-8 h-8 object-contain"
+            priority
+          />
+          <span className="font-bold text-slate-800 text-base tracking-tight">
             拼豆生成器
           </span>
-        </div>
+        </Link>
 
         <span className="text-slate-300 text-sm">|</span>
 

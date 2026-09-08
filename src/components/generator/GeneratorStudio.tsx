@@ -2,12 +2,12 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
+import NextImage from 'next/image';
 import {
   Download,
   Paintbrush,
   RefreshCw,
   FolderOpen,
-  ArrowLeft,
 } from 'lucide-react';
 import { useEditorStore } from '../../store/useEditorStore';
 import { GeneratorConfigPanel } from './GeneratorConfigPanel';
@@ -110,25 +110,30 @@ export const GeneratorStudio: React.FC = () => {
       {/* 顶部导航栏 */}
       <header className="header-bar-h w-full bg-white border-b border-slate-200 px-4 md:px-6 flex items-center justify-between z-20 shrink-0">
         <div className="flex items-center gap-3">
+          {/* 品牌 Logo 与回首页入口（待同事提供图片 Logo 时，可直接替换内部图标为 Image 资产） */}
           <Link
             href="/"
             title="返回首页"
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors"
+            className="flex items-center gap-2.5 group transition-opacity hover:opacity-90"
           >
-            <ArrowLeft className="w-4 h-4" />
-          </Link>
-
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-orange-500 text-white flex items-center justify-center font-bold text-sm shadow-2xs">
-              <span className="leading-none">豆</span>
-            </div>
+            {/* 最新透明底无黑描边拼豆 Logo */}
+            <NextImage
+              src="/brand/logo-v2.png"
+              alt="拼豆生成器 Logo"
+              width={32}
+              height={32}
+              className="w-8 h-8 object-contain"
+              priority
+            />
             <div className="flex items-center gap-1.5">
-              <span className="font-bold text-slate-800 text-sm md:text-base">拼豆生成器</span>
+              <span className="font-bold text-slate-800 text-sm md:text-base tracking-tight">
+                拼豆生成器
+              </span>
               <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700">
                 工作台
               </span>
             </div>
-          </div>
+          </Link>
 
           <span className="text-slate-300">|</span>
 

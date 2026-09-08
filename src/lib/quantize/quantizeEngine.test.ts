@@ -3,8 +3,10 @@ import {
   removeEdgeBackground,
   mergeLowUsageColors,
   cleanSmallConnectedRegions,
+  smartReducePalette,
 } from './quantizeEngine';
 import { STANDARD_PALETTE } from '../palette/standardPalette';
+import { ciede2000, findClosestColorIndex } from '../palette/colorDistance';
 
 describe('quantizeEngine optimization algorithms', () => {
   describe('removeEdgeBackground', () => {
@@ -99,6 +101,67 @@ describe('quantizeEngine optimization algorithms', () => {
       // 杂色碎块 (1,1) 和 (1,2) 应该被相邻的主色 1 吸收
       expect(cleaned[1 * width + 1]).toBe(1);
       expect(cleaned[1 * width + 2]).toBe(1);
+    });
+  });
+
+  describe('smartReducePalette feature preservation', () => {
+    it('preserves key high-contrast feature colors (like eyes/outline) even with low bead counts', () => {
+      // 场景：大面积绿色渐变背景（草绿 16 颗，翠绿 16 颗，薄荷绿 16 颗），
+      // 但人物有 2 颗至关重要的黑色眼睛 (index 1 为 A02 黑色)
+      // 当限制最大颜色数 maxColors = 2 时，算法应该优先合并色差较小的绿色系，
+      // 绝对不能把高反差的黑色眼睛吃掉！
+      // 假设：
+      // 色号 5 (A06 草绿): 15 颗
+      // 色号 25 (A26 翠绿): 15 颗
+      // 色号 24 (A25 薄荷绿): 10 颗
+      // 色号 1 (A02 黑色): 2 颗 (极其微量，但色差巨大)
+      const cells: number[] = [
+        ...new Array(15).fill(5),
+        ...new Array(15).fill(25),
+        ...new Array(10).fill(24),
+        1, 1, // 2 颗黑色眼睛
+      ];
+
+      // 压缩到 2 种主色
+      const result = smartReducePalette(cells, STANDARD_PALETTE, 2);
+
+      // 黑色 (1) 必须存活！
+      expect(result.usedPaletteIndices).toContain(1);
+      // 绿色系应该被合并为一个存活的主绿
+      expect(result.usedPaletteIndices.length).toBe(2);
+      // 黑色像素未被冲刷掉
+      expect(result.cells[cells.length - 1]).toBe(1);
+      expect(result.cells[cells.length - 2]).toBe(1);
+    });
+  });
+
+  describe('CIEDE2000 algorithm accuracy', () => {
+    it('accurately matches standard Sharma et al. (2005) benchmark cases', () => {
+      const benchmarkCases = [
+        { lab1: [50.0000, 2.6772, -79.7751] as [number, number, number], lab2: [50.0000, 0.0000, -82.7485] as [number, number, number], expected: 2.0425 },
+        { lab1: [50.0000, 3.1571, -77.2803] as [number, number, number], lab2: [50.0000, 0.0000, -82.7485] as [number, number, number], expected: 2.8615 },
+        { lab1: [50.0000, 2.8361, -74.0200] as [number, number, number], lab2: [50.0000, 0.0000, -82.7485] as [number, number, number], expected: 3.4412 },
+        { lab1: [50.0000, -1.3802, -84.2814] as [number, number, number], lab2: [50.0000, 0.0000, -82.7485] as [number, number, number], expected: 1.0000 },
+        { lab1: [50.0000, 0.0000, 0.0000] as [number, number, number], lab2: [50.0000, -1.0000, 2.0000] as [number, number, number], expected: 2.3669 },
+        { lab1: [50.0000, 2.4900, -0.0010] as [number, number, number], lab2: [50.0000, -2.4900, 0.0009] as [number, number, number], expected: 7.1792 },
+        { lab1: [50.0000, 2.5000, 0.0000] as [number, number, number], lab2: [73.0000, 25.0000, -18.0000] as [number, number, number], expected: 27.1492 },
+        { lab1: [60.2574, -34.0099, 36.2677] as [number, number, number], lab2: [60.4626, -34.1751, 39.4387] as [number, number, number], expected: 1.2644 },
+      ];
+
+      for (const tc of benchmarkCases) {
+        const dE = ciede2000(tc.lab1, tc.lab2);
+        expect(Math.abs(dE - tc.expected)).toBeLessThan(0.0005);
+      }
+    });
+
+    it('accurately identifies skin tone without bias into dull grey or green', () => {
+      // 典型柔白肉色 RGB: (255, 241, 232)
+      const fleshRgb: [number, number, number] = [255, 241, 232];
+      const bestIdx = findClosestColorIndex(fleshRgb, STANDARD_PALETTE);
+      const matched = STANDARD_PALETTE[bestIdx];
+
+      // 应当匹配到 A49 柔白肉色或 A12 浅肤色等肤色系列，绝不能匹配成冷灰、杂绿等偏色
+      expect(['A49', 'A12', 'A13', 'A01']).toContain(matched.code);
     });
   });
 });

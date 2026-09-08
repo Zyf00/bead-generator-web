@@ -7,7 +7,7 @@ interface RawColorDefinition {
   hex: string;
 }
 
-// 国内外主流拼豆（Artkal / Mard / Perler 兼容标准色表 48 常用色）
+// 国内外主流拼豆（Artkal / Mard / Perler 兼容标准色表 72 常用色）
 const RAW_COLORS: RawColorDefinition[] = [
   { code: 'A01', name: '纯白', hex: '#FFFFFF' },
   { code: 'A02', name: '黑色', hex: '#1C1C1C' },
@@ -60,10 +60,44 @@ const RAW_COLORS: RawColorDefinition[] = [
   { code: 'A46', name: '红棕', hex: '#78350F' },
   { code: 'A47', name: '灰粉', hex: '#FDA4AF' },
   { code: 'A48', name: '淡青', hex: '#A7F3D0' },
+
+  // 精准扩充：专业级肤色梯队（Artkal S58-S83 / Mard 兼容）
+  { code: 'A49', name: '柔白肉色', hex: '#FFF1E8' },
+  { code: 'A50', name: '暖粉肤色', hex: '#FAD7C0' },
+  { code: 'A51', name: '自然肤色', hex: '#F4C2A1' },
+  { code: 'A52', name: '小麦肤色', hex: '#E2A980' },
+  { code: 'A53', name: '阴影暖肤', hex: '#C88A65' },
+
+  // 过渡灰阶与莫兰迪中性色
+  { code: 'A54', name: '暖灰白', hex: '#EDE8E1' },
+  { code: 'A55', name: '浅暖灰', hex: '#CCC4B8' },
+  { code: 'A56', name: '水泥灰', hex: '#6B7280' },
+  { code: 'A57', name: '炭黑灰', hex: '#27272A' },
+
+  // 经典大地与毛发色
+  { code: 'A58', name: '奶咖色', hex: '#D4B996' },
+  { code: 'A59', name: '燕麦色', hex: '#E5D9C5' },
+  { code: 'A60', name: '栗棕色', hex: '#7C4328' },
+  { code: 'A61', name: '赭石褐', hex: '#5C2C16' },
+
+  // 低饱和自然植物绿与海洋蓝
+  { code: 'A62', name: '抹茶绿', hex: '#84A98C' },
+  { code: 'A63', name: '鼠尾草绿', hex: '#A3B18A' },
+  { code: 'A64', name: '橄榄暗绿', hex: '#3A5A40' },
+  { code: 'A65', name: '冰川蓝', hex: '#BAE6FD' },
+  { code: 'A66', name: '雾霾蓝', hex: '#7998B0' },
+  { code: 'A67', name: '黛蓝', hex: '#2C4A6F' },
+
+  // 柔和花卉与高阶暖色
+  { code: 'A68', name: '樱花粉', hex: '#FCE7F3' },
+  { code: 'A69', name: '豆沙红', hex: '#9F4A54' },
+  { code: 'A70', name: '暖姜黄', hex: '#E09F3E' },
+  { code: 'A71', name: '薰衣草紫', hex: '#B8A9C9' },
+  { code: 'A72', name: '灰紫泥', hex: '#6D597A' },
 ];
 
 /**
- * 完整标准 48 色拼豆色卡（预先计算好 RGB 和 CIELAB 坐标）
+ * 完整标准 72 色拼豆色卡（预先计算好 RGB 和 CIELAB 坐标）
  */
 export const STANDARD_PALETTE: BeadColor[] = RAW_COLORS.map((item, index) => {
   const rgb = hexToRgb(item.hex);

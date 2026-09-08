@@ -1,5 +1,5 @@
 import { BeadColor, GenerationOptions, GeneratorFitMode } from '../types';
-import { findClosestColorIndex, labDeltaE } from '../palette/colorDistance';
+import { findClosestColorIndex, ciede2000 } from '../palette/colorDistance';
 
 /**
  * 将任意图片渲染并采样成 width × height 网格的 ImageData
@@ -81,38 +81,97 @@ function applyContrastAndSaturation(
 }
 
 /**
- * 获取图片中使用频率最高的前 N 种最匹配色卡颜色
+ * 智能渐进式调色板合并算法：
+ * 避免提前按面积截断色卡造成前景关键色（如黑眼珠、红唇、面部肤色）丢失。
+ * 综合评估各颜色之间的 CIEDE2000 感知色差与像素占比，
+ * 优先合并视觉极其接近的同类色（如相似渐变背景），保护高反差、强特征的孤立关键色。
  */
-function selectTopDominantPalette(
-  imageData: ImageData,
-  fullPalette: BeadColor[],
+export function smartReducePalette(
+  cells: number[],
+  palette: BeadColor[],
   maxColors: number
-): { restrictedPalette: BeadColor[]; indexMap: number[] } {
-  const data = imageData.data;
+): { cells: number[]; usedPaletteIndices: number[] } {
+  // 1. 统计当前网格中各色号出现次数
   const countMap = new Map<number, number>();
-
-  // 统计每种色卡颜色的初筛频次
-  for (let i = 0; i < data.length; i += 4) {
-    if (data[i + 3] < 30) continue;
-    const r = data[i];
-    const g = data[i + 1];
-    const b = data[i + 2];
-    const bestIdx = findClosestColorIndex([r, g, b], fullPalette);
-    countMap.set(bestIdx, (countMap.get(bestIdx) || 0) + 1);
+  for (const c of cells) {
+    if (c >= 0) {
+      countMap.set(c, (countMap.get(c) || 0) + 1);
+    }
   }
 
-  // 按频次从大到小排序
-  const sorted = Array.from(countMap.entries()).sort((a, b) => b[1] - a[1]);
-  const chosenIndices = sorted.slice(0, maxColors).map(item => item[0]);
-
-  // 如果提取不到足够颜色（例如纯透明或全白图），保证 indexMap 与 restrictedPalette 长度一致
-  if (chosenIndices.length === 0) {
-    const fallbackPalette = fullPalette.slice(0, maxColors);
-    return { restrictedPalette: fallbackPalette, indexMap: fallbackPalette.map((_, i) => i) };
+  const distinctColors = Array.from(countMap.keys());
+  if (distinctColors.length <= maxColors) {
+    return {
+      cells,
+      usedPaletteIndices: distinctColors.sort((a, b) => a - b),
+    };
   }
 
-  const restrictedPalette = chosenIndices.map(idx => fullPalette[idx]);
-  return { restrictedPalette, indexMap: chosenIndices };
+  // 2. 渐进式迭代合并，直至剩余色数 <= maxColors
+  const parentMap = new Map<number, number>();
+  const getRoot = (color: number): number => {
+    let curr = color;
+    while (parentMap.has(curr)) {
+      curr = parentMap.get(curr)!;
+    }
+    return curr;
+  };
+
+  const activeColors = [...distinctColors];
+
+  while (activeColors.length > maxColors) {
+    let minCost = Infinity;
+    let bestPair: [number, number] = [activeColors[0], activeColors[1]];
+
+    for (let i = 0; i < activeColors.length; i++) {
+      for (let j = i + 1; j < activeColors.length; j++) {
+        const c1 = activeColors[i];
+        const c2 = activeColors[j];
+        const lab1 = palette[c1].lab;
+        const lab2 = palette[c2].lab;
+
+        const dE = ciede2000(lab1, lab2);
+        const cnt1 = countMap.get(c1) || 1;
+        const cnt2 = countMap.get(c2) || 1;
+
+        // 合并成本 = CIEDE2000 感知色差 × 较少一方颗粒数的开方加权
+        // 这样色差极小的相似色优先合并，高反差关键特征色得以坚决保留
+        const cost = dE * Math.sqrt(Math.min(cnt1, cnt2));
+        if (cost < minCost) {
+          minCost = cost;
+          bestPair = [c1, c2];
+        }
+      }
+    }
+
+    const [c1, c2] = bestPair;
+    const cnt1 = countMap.get(c1) || 0;
+    const cnt2 = countMap.get(c2) || 0;
+
+    // 频次较少的合并入频次较多的主色
+    const [survivor, absorbed] = cnt1 >= cnt2 ? [c1, c2] : [c2, c1];
+
+    parentMap.set(absorbed, survivor);
+    countMap.set(survivor, cnt1 + cnt2);
+    countMap.delete(absorbed);
+
+    const absorbedIdx = activeColors.indexOf(absorbed);
+    if (absorbedIdx !== -1) {
+      activeColors.splice(absorbedIdx, 1);
+    }
+  }
+
+  // 3. 应用合并映射到最终像素网格
+  const newCells = cells.map(c => {
+    if (c < 0) return -1;
+    return getRoot(c);
+  });
+
+  const finalUsed = Array.from(new Set(newCells.filter(c => c >= 0))).sort((a, b) => a - b);
+  return {
+    cells: newCells,
+    usedPaletteIndices: finalUsed,
+  };
 }
 
 /**
@@ -329,7 +388,7 @@ export function mergeLowUsageColors(
     for (const domIdx of dominantColors) {
       const domColor = palette[domIdx];
       if (!domColor) continue;
-      const delta = labDeltaE(rareColor.lab, domColor.lab);
+      const delta = ciede2000(rareColor.lab, domColor.lab);
       if (delta < minDelta) {
         minDelta = delta;
         targetIdx = domIdx;
@@ -484,62 +543,68 @@ export function quantizeImageToGrid(
     applyContrastAndSaturation(data, -5, 1.0);
   }
 
-  // 3. 筛选主色卡集合
+  // 3. 初次全局最优感知量化（在完整色库中基于 CIEDE2000 寻找最精确拼豆色，避免关键特征色被提前截断）
   const targetMaxColors = Math.min(maxColors, fullPalette.length);
-  const { restrictedPalette, indexMap } = selectTopDominantPalette(imgData, fullPalette, targetMaxColors);
-
-  // 4. 量化网格匹配（支持 Floyd-Steinberg 误差抖动）
-  const cells = new Array<number>(width * height).fill(-1);
-
-  // 浮点色彩缓冲区用于误差扩散
-  const bufferR = new Float32Array(width * height);
-  const bufferG = new Float32Array(width * height);
-  const bufferB = new Float32Array(width * height);
-  const alphaBuffer = new Uint8Array(width * height);
-
-  for (let i = 0; i < width * height; i++) {
-    bufferR[i] = data[i * 4];
-    bufferG[i] = data[i * 4 + 1];
-    bufferB[i] = data[i * 4 + 2];
-    alphaBuffer[i] = data[i * 4 + 3];
-  }
-
-  const useDithering = dithering && preset === 'detail';
+  let cells = new Array<number>(width * height).fill(-1);
 
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const idx = y * width + x;
+      const a = data[idx * 4 + 3];
+      if (a < 30) continue;
 
-      // 透明像素跳过
-      if (alphaBuffer[idx] < 30) {
-        cells[idx] = -1;
-        continue;
-      }
+      const r = data[idx * 4];
+      const g = data[idx * 4 + 1];
+      const b = data[idx * 4 + 2];
+      cells[idx] = findClosestColorIndex([r, g, b], fullPalette);
+    }
+  }
 
-      const r = Math.min(255, Math.max(0, bufferR[idx]));
-      const g = Math.min(255, Math.max(0, bufferG[idx]));
-      const b = Math.min(255, Math.max(0, bufferB[idx]));
+  // 4. 执行智能渐进式合并，将超出 targetMaxColors 种的次要色平滑收敛至主色
+  const reductionResult = smartReducePalette(cells, fullPalette, targetMaxColors);
+  cells = reductionResult.cells;
+  const activePaletteIndices = reductionResult.usedPaletteIndices;
 
-      // 找最近色
-      const localBestIdx = findClosestColorIndex([r, g, b], restrictedPalette);
-      const originalPaletteIndex = indexMap[localBestIdx] ?? 0;
-      cells[idx] = originalPaletteIndex;
+  // 4.1 若开启了 detail 预设且勾选了误差抖动，在精选后的调色板上重新执行 Floyd-Steinberg 扩散
+  const useDithering = dithering && preset === 'detail' && activePaletteIndices.length > 1;
+  if (useDithering) {
+    const activePalette = activePaletteIndices.map(idx => fullPalette[idx]);
+    const bufferR = new Float32Array(width * height);
+    const bufferG = new Float32Array(width * height);
+    const bufferB = new Float32Array(width * height);
 
-      // 误差扩散
-      if (useDithering) {
+    for (let i = 0; i < width * height; i++) {
+      bufferR[i] = data[i * 4];
+      bufferG[i] = data[i * 4 + 1];
+      bufferB[i] = data[i * 4 + 2];
+    }
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const idx = y * width + x;
+        if (data[idx * 4 + 3] < 30) {
+          cells[idx] = -1;
+          continue;
+        }
+
+        const r = Math.min(255, Math.max(0, bufferR[idx]));
+        const g = Math.min(255, Math.max(0, bufferG[idx]));
+        const b = Math.min(255, Math.max(0, bufferB[idx]));
+
+        const localBestIdx = findClosestColorIndex([r, g, b], activePalette);
+        const originalPaletteIndex = activePaletteIndices[localBestIdx] ?? 0;
+        cells[idx] = originalPaletteIndex;
+
         const matchedColor = fullPalette[originalPaletteIndex];
         if (matchedColor) {
           const errR = r - matchedColor.rgb[0];
           const errG = g - matchedColor.rgb[1];
           const errB = b - matchedColor.rgb[2];
 
-          // Floyd-Steinberg 系数:
-          // [*,  7/16]
-          // [3/16, 5/16, 1/16]
           const distribute = (nx: number, ny: number, factor: number) => {
             if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
               const nIdx = ny * width + nx;
-              if (alphaBuffer[nIdx] >= 30) {
+              if (data[nIdx * 4 + 3] >= 30) {
                 bufferR[nIdx] += errR * factor;
                 bufferG[nIdx] += errG * factor;
                 bufferB[nIdx] += errB * factor;

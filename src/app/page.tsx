@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useRef, useState } from 'react';
+import NextImage from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -95,14 +96,24 @@ export default function HomePage() {
     <div className="min-h-screen bg-[#FBFBFA] text-slate-800 flex flex-col justify-between select-none">
       {/* 顶部导航 */}
       <header className="header-bar-h w-full border-b border-slate-200/80 bg-white/80 backdrop-blur-md px-6 md:px-12 flex items-center justify-between sticky top-0 z-20">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-orange-500 text-white flex items-center justify-center font-bold text-sm shadow-xs">
-            <span className="leading-none">豆</span>
-          </div>
-          <span className="font-bold text-slate-800 text-base tracking-wide">
+        {/* 品牌 Logo 与回首页入口 */}
+        <Link
+          href="/"
+          className="flex items-center gap-2.5 group transition-opacity hover:opacity-90"
+        >
+          {/* 最新透明底无黑描边拼豆 Logo */}
+          <NextImage
+            src="/brand/logo-v2.png"
+            alt="拼豆生成器 Logo"
+            width={32}
+            height={32}
+            priority
+            className="w-8 h-8 object-contain"
+          />
+          <span className="font-bold text-slate-800 text-base tracking-tight">
             拼豆生成器
           </span>
-        </div>
+        </Link>
 
         <div className="flex items-center gap-3">
           <button
