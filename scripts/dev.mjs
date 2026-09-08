@@ -35,16 +35,15 @@ function getLocalLanIp() {
 
 const lanIp = getLocalLanIp();
 
-// 打印显眼的访问提示卡片
+// 打印显眼的访问提示卡片（统一展示真实物理局域网 IP，完全去除 localhost）
 console.log('\n\x1b[36m%s\x1b[0m', '  ============================================================');
 console.log('\x1b[33m%s\x1b[0m', '  🎨 拼豆生成器 Web 开发服务');
-console.log('  - 本地访问:    \x1b[34mhttp://localhost:' + PORT + '\x1b[0m');
-console.log('  - 局域网访问:  \x1b[32mhttp://' + lanIp + ':' + PORT + '\x1b[0m (手机/局域网设备可用)');
+console.log('  - 访问地址:    \x1b[32mhttp://' + lanIp + ':' + PORT + '\x1b[0m (本机与手机/局域网通用)');
 console.log('  - 编辑器直达:  \x1b[35mhttp://' + lanIp + ':' + PORT + '/editor\x1b[0m');
 console.log('\x1b[36m%s\x1b[0m\n', '  ============================================================');
 
-// 启动 Next.js 开发服务器，监听 0.0.0.0
-const child = spawn('npx', ['next', 'dev', '-H', '0.0.0.0', '-p', String(PORT)], {
+// 启动 Next.js 开发服务器，直接绑定物理网卡真实 IP，确保 Next.js 自身日志也输出真实 IP 而非 localhost
+const child = spawn('npx', ['next', 'dev', '-H', lanIp, '-p', String(PORT)], {
   stdio: 'inherit',
   shell: true,
 });

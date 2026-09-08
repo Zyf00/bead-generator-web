@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -12,6 +12,7 @@ import {
   FolderOpen,
   ArrowRight,
   ShieldCheck,
+  CheckCircle,
 } from 'lucide-react';
 import { useEditorStore } from '../store/useEditorStore';
 import { parseBeadProjectFile } from '../lib/export/exportProject';
@@ -19,12 +20,51 @@ import { parseBeadProjectFile } from '../lib/export/exportProject';
 export default function HomePage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { loadProject, resizeGrid, setBeadSize, setProjectName } = useEditorStore();
+  const imageUploadRef = useRef<HTMLInputElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
-  const handleSelectTemplate = (width: number, height: number, size: '2.6mm' | '5.0mm', name: string) => {
+  const {
+    loadProject,
+    resizeGrid,
+    setBeadSize,
+    setProjectName,
+    setSourceImage,
+    setWorkspaceMode,
+  } = useEditorStore();
+
+  const handleImageFile = (file: File) => {
+    const reader = new FileReader();
+    reader.addEventListener('load', () => {
+      const dataUrl = reader.result as string;
+      const img = new Image();
+      img.onload = () => {
+        setSourceImage(dataUrl, { width: img.naturalWidth, height: img.naturalHeight });
+        setWorkspaceMode('generate');
+        router.push('/editor');
+      };
+      img.src = dataUrl;
+    });
+    reader.readAsDataURL(file);
+  };
+
+  const handleSelectTemplate = (
+    width: number,
+    height: number,
+    size: '2.6mm' | '5.0mm',
+    name: string
+  ) => {
     resizeGrid(width, height);
     setBeadSize(size);
     setProjectName(name);
+    setWorkspaceMode('generate');
+    router.push('/editor');
+  };
+
+  const handleCreateBlank = () => {
+    resizeGrid(29, 29);
+    setBeadSize('2.6mm');
+    setProjectName('空白拼板创作');
+    setWorkspaceMode('edit');
     router.push('/editor');
   };
 
@@ -34,11 +74,20 @@ export default function HomePage() {
         const file = e.target.files[0];
         const project = await parseBeadProjectFile(file);
         loadProject(project);
+        setWorkspaceMode('edit');
         router.push('/editor');
       } catch (err) {
         console.error('导入工程失败', err);
         alert('导入工程文件失败，请确认文件是否为有效的 .bead 格式');
       }
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleImageFile(e.dataTransfer.files[0]);
     }
   };
 
@@ -75,57 +124,139 @@ export default function HomePage() {
             href="/editor"
             className="btn-h-36 px-4 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
           >
-            <span>进入编辑器</span>
+            <span>进入工作台</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </div>
       </header>
 
       {/* 主视觉 Hero 区域 */}
-      <main className="flex-1 max-w-5xl mx-auto px-6 py-12 md:py-20 flex flex-col items-center text-center">
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-50 border border-orange-200/60 text-orange-700 text-xs font-semibold mb-6">
+      <main className="flex-1 max-w-5xl mx-auto px-6 py-10 md:py-16 flex flex-col items-center text-center">
+        <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-orange-50 border border-orange-200/60 text-orange-700 text-xs font-semibold mb-6">
           <Sparkles className="w-3.5 h-3.5 text-orange-500" />
-          <span>专为手作人打造的真实拼豆图纸工具</span>
+          <span>上传图片 · 1分钟获取可购买、可拼装的实体拼豆图纸</span>
         </div>
 
-        <h1 className="text-3xl sm:text-5xl font-bold tracking-tight text-slate-900 leading-tight max-w-3xl mb-6">
+        <h1 className="text-3xl sm:text-5xl font-bold tracking-tight text-slate-900 leading-tight max-w-3xl mb-5">
           把喜欢的图片，变成一份真正可以完成的拼豆作品
         </h1>
 
-        <p className="text-slate-600 text-sm sm:text-base max-w-2xl leading-relaxed mb-10">
-          告别普通像素画工具的不匹配问题。自动对齐实体拼豆主流品牌色号、计算真实颗数清单、支持 1:1 透明拼板垫底打印，让每位手作爱好者轻松上手。
+        <p className="text-slate-600 text-sm sm:text-base max-w-2xl leading-relaxed mb-8">
+          无需复杂的像素画绘制技巧。智能映射实体拼豆色号、自动统计颗粒消耗清单、生成 1:1 透明拼板打印垫纸。
         </p>
 
-        {/* 快速起步卡片 */}
-        <div className="flex flex-col sm:flex-row items-center gap-4 w-full justify-center mb-16">
-          <Link
-            href="/editor?action=import"
-            className="btn-h-40 px-8 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all"
-          >
-            <Upload className="w-4 h-4" />
-            <span>导入图片开始创作</span>
-          </Link>
+        {/* 核心主任务：上传图片生成工作台（大尺寸拖拽投放区） */}
+        <div
+          onDragOver={(e) => {
+            e.preventDefault();
+            setIsDragging(true);
+          }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={handleDrop}
+          onClick={() => imageUploadRef.current?.click()}
+          className={`w-full max-w-2xl p-8 sm:p-10 rounded-2xl border-2 border-dashed transition-all cursor-pointer flex flex-col items-center justify-center mb-8 ${
+            isDragging
+              ? 'border-orange-500 bg-orange-50/70 scale-[1.01]'
+              : 'border-orange-300 hover:border-orange-500 bg-white hover:bg-orange-50/30 shadow-md hover:shadow-lg'
+          }`}
+        >
+          <div className="w-16 h-16 rounded-2xl bg-orange-100 text-orange-600 flex items-center justify-center mb-4 shadow-2xs">
+            <Upload className="w-8 h-8" />
+          </div>
+
+          <span className="text-lg sm:text-xl font-bold text-slate-800 mb-1">
+            上传图片，生成拼豆图纸
+          </span>
+          <span className="text-xs text-slate-500 mb-5">
+            点击选择 或 拖拽图片至此处 (支持 PNG、JPG、JPEG、WebP 格式)
+          </span>
 
           <button
-            onClick={() => handleSelectTemplate(29, 29, '2.6mm', '经典挂件')}
-            className="btn-h-40 px-6 rounded-xl border border-slate-300 hover:border-slate-400 bg-white text-slate-700 font-semibold text-sm flex items-center justify-center gap-2 transition-all shadow-2xs"
+            type="button"
+            className="btn-h-44 px-8 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold text-sm shadow-md transition-all flex items-center gap-2 pointer-events-none"
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>立即开始生成</span>
+          </button>
+
+          <input
+            ref={imageUploadRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            onChange={(e) => {
+              if (e.target.files && e.target.files.length > 0) {
+                handleImageFile(e.target.files[0]);
+              }
+            }}
+            className="hidden"
+          />
+        </div>
+
+        {/* 辅助入口 */}
+        <div className="flex flex-wrap items-center justify-center gap-4 mb-16 text-xs font-semibold text-slate-600">
+          <button
+            onClick={handleCreateBlank}
+            className="btn-h-36 px-4 rounded-lg bg-white border border-slate-200 hover:border-slate-300 text-slate-700 flex items-center gap-1.5 transition-colors shadow-2xs"
           >
             <Layers className="w-4 h-4 text-slate-500" />
-            <span>从空白标准拼板开始</span>
+            <span>从空白标准拼板创作</span>
+          </button>
+
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="btn-h-36 px-4 rounded-lg bg-white border border-slate-200 hover:border-slate-300 text-slate-700 flex items-center gap-1.5 transition-colors shadow-2xs"
+          >
+            <FolderOpen className="w-4 h-4 text-slate-500" />
+            <span>导入已有工程 (.bead)</span>
           </button>
         </div>
 
-        {/* 常用预设模板卡片 */}
+        {/* 交付内容明确：用户最终可得到什么 */}
+        <div className="w-full bg-white border border-slate-200/80 rounded-2xl p-6 sm:p-8 mb-16 text-left shadow-xs">
+          <div className="flex items-center gap-2 mb-4">
+            <CheckCircle className="w-5 h-5 text-emerald-600" />
+            <span className="font-bold text-slate-800 text-base">
+              您最终将获得一份完整的拼豆制作方案：
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 text-xs">
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-100">
+              <span className="font-bold text-slate-800 block mb-1">1. 高清标号制作图纸</span>
+              <span className="text-slate-500 block leading-relaxed">
+                带坐标网格与色号代码，拼装清晰不串色。
+              </span>
+            </div>
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-100">
+              <span className="font-bold text-slate-800 block mb-1">2. 颗粒材料采购清单</span>
+              <span className="text-slate-500 block leading-relaxed">
+                精确统计每个色号颗数与占比，支持导出 CSV。
+              </span>
+            </div>
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-100">
+              <span className="font-bold text-slate-800 block mb-1">3. 1:1 实物垫底打印</span>
+              <span className="text-slate-500 block leading-relaxed">
+                透明拼板直接放在 A4 纸上垫着拼，孔位严丝合缝。
+              </span>
+            </div>
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-100">
+              <span className="font-bold text-slate-800 block mb-1">4. 实体拼装安全保证</span>
+              <span className="text-slate-500 block leading-relaxed">
+                自动检测并吸附孤立单颗，熨烫稳固不易碎。
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* 常用手作尺寸模板 */}
         <div className="w-full text-left mb-16">
           <div className="font-bold text-slate-800 text-base mb-4 flex items-center gap-2">
             <span>常用手作尺寸模板</span>
             <span className="text-xs font-normal text-slate-400">
-              根据实体拼板规格精心预设
+              根据实体拼板规格预设
             </span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {/* 模板 1 */}
             <div
               onClick={() => handleSelectTemplate(29, 29, '2.6mm', '钥匙扣挂件')}
               className="p-5 rounded-2xl border border-slate-200 bg-white hover:border-orange-300 hover:shadow-md cursor-pointer transition-all flex flex-col justify-between"
@@ -145,12 +276,11 @@ export default function HomePage() {
                 </p>
               </div>
               <div className="mt-4 pt-3 border-t border-slate-100 text-xs font-bold text-orange-600 flex items-center gap-1">
-                <span>进入创作</span>
+                <span>快速起步</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </div>
             </div>
 
-            {/* 模板 2 */}
             <div
               onClick={() => handleSelectTemplate(29, 29, '5.0mm', '日常杯垫')}
               className="p-5 rounded-2xl border border-slate-200 bg-white hover:border-orange-300 hover:shadow-md cursor-pointer transition-all flex flex-col justify-between"
@@ -170,12 +300,11 @@ export default function HomePage() {
                 </p>
               </div>
               <div className="mt-4 pt-3 border-t border-slate-100 text-xs font-bold text-orange-600 flex items-center gap-1">
-                <span>进入创作</span>
+                <span>快速起步</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </div>
             </div>
 
-            {/* 模板 3 */}
             <div
               onClick={() => handleSelectTemplate(58, 58, '2.6mm', '桌面立牌摆件')}
               className="p-5 rounded-2xl border border-slate-200 bg-white hover:border-orange-300 hover:shadow-md cursor-pointer transition-all flex flex-col justify-between"
@@ -195,7 +324,7 @@ export default function HomePage() {
                 </p>
               </div>
               <div className="mt-4 pt-3 border-t border-slate-100 text-xs font-bold text-orange-600 flex items-center gap-1">
-                <span>进入创作</span>
+                <span>快速起步</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </div>
             </div>
@@ -238,9 +367,9 @@ export default function HomePage() {
             <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-600 flex items-center justify-center mb-3">
               <Layers className="w-5 h-5" />
             </div>
-            <div className="font-bold text-slate-800 text-sm mb-1">纯本地无感存储</div>
+            <div className="font-bold text-slate-800 text-sm mb-1">纯本地运算</div>
             <p className="text-xs text-slate-500 leading-relaxed">
-              全部在浏览器本地极速运算，无需登录，保障您的原创图片隐私。
+              全部在浏览器本地运算，无需登录，保障原创图片隐私。
             </p>
           </div>
         </div>

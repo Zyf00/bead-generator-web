@@ -11,6 +11,7 @@ import {
   Tag,
   Download,
   Upload,
+  Sliders,
 } from 'lucide-react';
 import { useEditorStore } from '../../store/useEditorStore';
 import { CanvasViewMode } from '../../lib/types';
@@ -27,6 +28,7 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
   const {
     project,
     setProjectName,
+    setWorkspaceMode,
     undo,
     redo,
     history,
@@ -45,6 +47,20 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
   const handleResetZoom = () => {
     setScale(1);
     setOffset(0, 0);
+  };
+
+  const handleBackToGenerator = () => {
+    if (history.length > 0) {
+      if (
+        window.confirm(
+          '返回生成工作台重新调整参数可能会覆盖当前精细画布上的手工修改。确定要返回吗？'
+        )
+      ) {
+        setWorkspaceMode('generate');
+      }
+    } else {
+      setWorkspaceMode('generate');
+    }
   };
 
   return (
@@ -178,8 +194,16 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
         </div>
       </div>
 
-      {/* 右侧：导入图片与导出图纸 */}
+      {/* 右侧：返回生成、导入图片与导出图纸 */}
       <div className="flex items-center gap-2.5">
+        <button
+          onClick={handleBackToGenerator}
+          className="btn-h-36 px-3 rounded-lg border border-orange-200 hover:border-orange-300 bg-orange-50/80 hover:bg-orange-100 text-orange-700 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs"
+        >
+          <Sliders className="w-3.5 h-3.5 text-orange-600" />
+          <span>返回生成参数</span>
+        </button>
+
         <button
           onClick={onOpenImport}
           className="btn-h-36 px-3 rounded-lg border border-slate-300 hover:border-slate-400 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium flex items-center gap-1.5 shadow-2xs transition-colors"

@@ -1,17 +1,19 @@
-import { BeadColor, GenerationOptions } from '../types';
-import { findClosestColorIndex } from '../palette/colorDistance';
+import { BeadColor, GenerationOptions, GeneratorFitMode } from '../types';
+import { findClosestColorIndex, labDeltaE } from '../palette/colorDistance';
 
 /**
  * 将任意图片渲染并采样成 width × height 网格的 ImageData
- * 支持 contain (等比例居中完整放入，边缘透明) 与 cover (拉伸充满)
+ * 支持 contain (等比例居中完整放入，边缘透明) 与 cover (拉伸充满) 以及 auto_grid (自适应宽高填充)
+ * 支持 padding (网格四周预留留白内边距，边缘保持透明空孔)
  */
 export function resampleImageToGrid(
   source: CanvasImageSource,
   targetWidth: number,
   targetHeight: number,
-  fitMode: 'contain' | 'cover' = 'cover',
+  fitMode: GeneratorFitMode = 'cover',
   sourceWidth?: number,
-  sourceHeight?: number
+  sourceHeight?: number,
+  padding: number = 0
 ): ImageData {
   const canvas = document.createElement('canvas');
   canvas.width = targetWidth;
@@ -25,16 +27,24 @@ export function resampleImageToGrid(
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
 
+  // 计算扣除留白内边距后的可用网格尺寸
+  const safePadding = Math.max(0, Math.min(padding, Math.floor(Math.min(targetWidth, targetHeight) / 4)));
+  const availWidth = targetWidth - safePadding * 2;
+  const availHeight = targetHeight - safePadding * 2;
+  const offsetX = safePadding;
+  const offsetY = safePadding;
+
   if (fitMode === 'contain' && sourceWidth && sourceHeight) {
     // 等比例缩放居中放置，留空区域保持透明 (alpha = 0)
-    const scale = Math.min(targetWidth / sourceWidth, targetHeight / sourceHeight);
+    const scale = Math.min(availWidth / sourceWidth, availHeight / sourceHeight);
     const drawW = sourceWidth * scale;
     const drawH = sourceHeight * scale;
-    const drawX = (targetWidth - drawW) / 2;
-    const drawY = (targetHeight - drawH) / 2;
+    const drawX = offsetX + (availWidth - drawW) / 2;
+    const drawY = offsetY + (availHeight - drawH) / 2;
     ctx.drawImage(source, drawX, drawY, drawW, drawH);
   } else {
-    ctx.drawImage(source, 0, 0, targetWidth, targetHeight);
+    // cover 铺满可用区域
+    ctx.drawImage(source, offsetX, offsetY, availWidth, availHeight);
   }
 
   return ctx.getImageData(0, 0, targetWidth, targetHeight);
@@ -161,6 +171,278 @@ function removeSingleIslands(
 }
 
 /**
+ * 自动边缘去背景算法：
+ * 从四周边框边缘像素泛洪寻找与背景色相近的连通区域，将其设为透明 (alpha = 0)。
+ * 不会误伤物体内部同色区域（如角色眼白、白色衣服等）。
+ */
+export function removeEdgeBackground(
+  imageData: ImageData,
+  width: number,
+  height: number,
+  tolerance = 36
+): void {
+  const data = imageData.data;
+  const visited = new Uint8Array(width * height);
+  const queue: number[] = [];
+
+  // 1. 采样四边边缘上不透明的像素，统计最具代表性的背景参考色
+  const sampleRgb: [number, number, number][] = [];
+  const addSample = (x: number, y: number) => {
+    const idx = y * width + x;
+    const a = data[idx * 4 + 3];
+    if (a >= 30) {
+      sampleRgb.push([data[idx * 4], data[idx * 4 + 1], data[idx * 4 + 2]]);
+    }
+  };
+
+  for (let x = 0; x < width; x++) {
+    addSample(x, 0);
+    addSample(x, height - 1);
+  }
+  for (let y = 1; y < height - 1; y++) {
+    addSample(0, y);
+    addSample(width - 1, y);
+  }
+
+  if (sampleRgb.length === 0) return; // 边缘已经全部透明
+
+  // 取边缘像素的平均色彩作为背景种子
+  let sumR = 0, sumG = 0, sumB = 0;
+  for (const [r, g, b] of sampleRgb) {
+    sumR += r;
+    sumG += g;
+    sumB += b;
+  }
+  const bgR = sumR / sampleRgb.length;
+  const bgG = sumG / sampleRgb.length;
+  const bgB = sumB / sampleRgb.length;
+
+  const isColorSimilar = (r: number, g: number, b: number) => {
+    const dr = r - bgR;
+    const dg = g - bgG;
+    const db = b - bgB;
+    return Math.sqrt(dr * dr + dg * dg + db * db) <= tolerance;
+  };
+
+  // 2. 将边缘上与背景色相近的像素作为种子放入队列
+  const enqueueEdge = (x: number, y: number) => {
+    const idx = y * width + x;
+    if (visited[idx]) return;
+    const a = data[idx * 4 + 3];
+    if (a < 30) {
+      visited[idx] = 1;
+      queue.push(idx);
+    } else if (isColorSimilar(data[idx * 4], data[idx * 4 + 1], data[idx * 4 + 2])) {
+      visited[idx] = 1;
+      queue.push(idx);
+    }
+  };
+
+  for (let x = 0; x < width; x++) {
+    enqueueEdge(x, 0);
+    enqueueEdge(x, height - 1);
+  }
+  for (let y = 1; y < height - 1; y++) {
+    enqueueEdge(0, y);
+    enqueueEdge(width - 1, y);
+  }
+
+  // 3. 广度优先泛洪 (BFS) 消除边缘连通背景
+  while (queue.length > 0) {
+    const curr = queue.shift()!;
+    data[curr * 4 + 3] = 0;
+
+    const cx = curr % width;
+    const cy = Math.floor(curr / width);
+
+    const neighbors = [
+      [cx - 1, cy],
+      [cx + 1, cy],
+      [cx, cy - 1],
+      [cx, cy + 1],
+    ];
+
+    for (const [nx, ny] of neighbors) {
+      if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+        const nIdx = ny * width + nx;
+        if (!visited[nIdx]) {
+          const a = data[nIdx * 4 + 3];
+          if (a < 30) {
+            visited[nIdx] = 1;
+            queue.push(nIdx);
+          } else if (isColorSimilar(data[nIdx * 4], data[nIdx * 4 + 1], data[nIdx * 4 + 2])) {
+            visited[nIdx] = 1;
+            queue.push(nIdx);
+          }
+        }
+      }
+    }
+  }
+}
+
+/**
+ * 少量颜色合并：
+ * 统计量化后各色号的使用频次，将用量极少（如低于阈值或占总颗数极低）的非关键杂色，
+ * 替换为当前已使用的且在视觉色差 (CIELAB Delta E) 上最近的主色。
+ */
+export function mergeLowUsageColors(
+  cells: number[],
+  palette: BeadColor[],
+  minCountThreshold = 3,
+  minPercentThreshold = 0.015
+): number[] {
+  const result = [...cells];
+  const countMap = new Map<number, number>();
+  let totalBeads = 0;
+
+  for (const c of result) {
+    if (c >= 0) {
+      countMap.set(c, (countMap.get(c) || 0) + 1);
+      totalBeads++;
+    }
+  }
+
+  if (totalBeads === 0 || countMap.size <= 2) return result;
+
+  const rareColors: number[] = [];
+  const dominantColors: number[] = [];
+
+  for (const [colorIdx, count] of countMap.entries()) {
+    const ratio = count / totalBeads;
+    if (count <= minCountThreshold || ratio < minPercentThreshold) {
+      rareColors.push(colorIdx);
+    } else {
+      dominantColors.push(colorIdx);
+    }
+  }
+
+  if (dominantColors.length === 0 || rareColors.length === 0) return result;
+
+  const replaceMap = new Map<number, number>();
+  for (const rareIdx of rareColors) {
+    const rareColor = palette[rareIdx];
+    if (!rareColor) continue;
+
+    let minDelta = Infinity;
+    let targetIdx = dominantColors[0];
+
+    for (const domIdx of dominantColors) {
+      const domColor = palette[domIdx];
+      if (!domColor) continue;
+      const delta = labDeltaE(rareColor.lab, domColor.lab);
+      if (delta < minDelta) {
+        minDelta = delta;
+        targetIdx = domIdx;
+      }
+    }
+    replaceMap.set(rareIdx, targetIdx);
+  }
+
+  for (let i = 0; i < result.length; i++) {
+    const c = result[i];
+    if (c >= 0 && replaceMap.has(c)) {
+      result[i] = replaceMap.get(c)!;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * 微小连通区域清理平滑：
+ * 基于 4-连通域标记，找出小于 minSize（默认 2 颗）的微小杂色碎块，
+ * 并将其合并为周围相邻出现频次最高的优势主色。
+ */
+export function cleanSmallConnectedRegions(
+  cells: number[],
+  width: number,
+  height: number,
+  minRegionSize = 2
+): number[] {
+  const result = [...cells];
+  const visited = new Uint8Array(width * height);
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const startIdx = y * width + x;
+      if (visited[startIdx] || result[startIdx] === -1) continue;
+
+      const targetColor = result[startIdx];
+      const component: number[] = [];
+      const queue: number[] = [startIdx];
+      visited[startIdx] = 1;
+
+      while (queue.length > 0) {
+        const curr = queue.pop()!;
+        component.push(curr);
+
+        const cx = curr % width;
+        const cy = Math.floor(curr / width);
+
+        const neighbors = [
+          [cx - 1, cy],
+          [cx + 1, cy],
+          [cx, cy - 1],
+          [cx, cy + 1],
+        ];
+
+        for (const [nx, ny] of neighbors) {
+          if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+            const nIdx = ny * width + nx;
+            if (!visited[nIdx] && result[nIdx] === targetColor) {
+              visited[nIdx] = 1;
+              queue.push(nIdx);
+            }
+          }
+        }
+      }
+
+      // 如果连通区域颗粒数过小，寻找周围邻居优势色替换
+      if (component.length <= minRegionSize) {
+        const neighborColorCounts = new Map<number, number>();
+
+        for (const cellIdx of component) {
+          const cx = cellIdx % width;
+          const cy = Math.floor(cellIdx / width);
+          const neighbors = [
+            [cx - 1, cy],
+            [cx + 1, cy],
+            [cx, cy - 1],
+            [cx, cy + 1],
+          ];
+
+          for (const [nx, ny] of neighbors) {
+            if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+              const nIdx = ny * width + nx;
+              const nColor = result[nIdx];
+              if (nColor !== -1 && nColor !== targetColor) {
+                neighborColorCounts.set(nColor, (neighborColorCounts.get(nColor) || 0) + 1);
+              }
+            }
+          }
+        }
+
+        if (neighborColorCounts.size > 0) {
+          let dominantNeighbor = targetColor;
+          let maxCount = 0;
+          for (const [col, count] of neighborColorCounts.entries()) {
+            if (count > maxCount) {
+              maxCount = count;
+              dominantNeighbor = col;
+            }
+          }
+          for (const cellIdx of component) {
+            result[cellIdx] = dominantNeighbor;
+          }
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
  * 核心量化引擎：将源图片按照选项转换为拼豆网格数据
  */
 export function quantizeImageToGrid(
@@ -170,18 +452,35 @@ export function quantizeImageToGrid(
   sourceWidth?: number,
   sourceHeight?: number
 ): { cells: number[]; usedPaletteIndices: number[] } {
-  const { width, height, maxColors, preset, dithering, fitMode = 'cover' } = options;
+  const {
+    width,
+    height,
+    maxColors,
+    preset,
+    dithering,
+    fitMode = 'cover',
+    padding = 0,
+    removeBackground = false,
+    mergeLowUsageColors: shouldMergeLowUsage = false,
+    cleanSmallRegions: shouldCleanSmall = false,
+  } = options;
 
-  // 1. 采样至目标网格尺寸
-  const imgData = resampleImageToGrid(source, width, height, fitMode, sourceWidth, sourceHeight);
+  // 1. 采样至目标网格尺寸（包含 padding 内边距留白）
+  const imgData = resampleImageToGrid(source, width, height, fitMode, sourceWidth, sourceHeight, padding);
+  
+  // 1.1 如果开启了自动去背景（或容易完成预设），执行边缘连通去背景
+  if (removeBackground || preset === 'easy') {
+    removeEdgeBackground(imgData, width, height);
+  }
+
   const data = imgData.data;
 
   // 2. 根据不同预设进行图像色彩调优
   if (preset === 'retro') {
-    // 复古像素风：提升对比度 +15，饱和度 1.3
+    // 复古像素风：提升对比度 +20，饱和度 1.35
     applyContrastAndSaturation(data, 20, 1.35);
   } else if (preset === 'easy') {
-    // 容易完成：稍微平滑对比度
+    // 容易完成：轻度平滑对比度，形成饱满大色块
     applyContrastAndSaturation(data, -5, 1.0);
   }
 
@@ -235,32 +534,43 @@ export function quantizeImageToGrid(
           const errB = b - matchedColor.rgb[2];
 
           // Floyd-Steinberg 系数:
-        // [*,  7/16]
-        // [3/16, 5/16, 1/16]
-        const distribute = (nx: number, ny: number, factor: number) => {
-          if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-            const nIdx = ny * width + nx;
-            if (alphaBuffer[nIdx] >= 30) {
-              bufferR[nIdx] += errR * factor;
-              bufferG[nIdx] += errG * factor;
-              bufferB[nIdx] += errB * factor;
+          // [*,  7/16]
+          // [3/16, 5/16, 1/16]
+          const distribute = (nx: number, ny: number, factor: number) => {
+            if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+              const nIdx = ny * width + nx;
+              if (alphaBuffer[nIdx] >= 30) {
+                bufferR[nIdx] += errR * factor;
+                bufferG[nIdx] += errG * factor;
+                bufferB[nIdx] += errB * factor;
+              }
             }
-          }
-        };
+          };
 
-        distribute(x + 1, y, 7 / 16);
-        distribute(x - 1, y + 1, 3 / 16);
-        distribute(x, y + 1, 5 / 16);
-        distribute(x + 1, y + 1, 1 / 16);
+          distribute(x + 1, y, 7 / 16);
+          distribute(x - 1, y + 1, 3 / 16);
+          distribute(x, y + 1, 5 / 16);
+          distribute(x + 1, y + 1, 1 / 16);
         }
       }
     }
   }
 
-  // 5. 若是“容易完成”预设，执行孤岛合并
   let finalCells = cells;
+
+  // 5. 算法优化阶段：少量颜色合并
+  if (shouldMergeLowUsage || preset === 'easy') {
+    finalCells = mergeLowUsageColors(finalCells, fullPalette);
+  }
+
+  // 6. 微小连通区域清理
+  if (shouldCleanSmall || preset === 'easy' || preset === 'retro') {
+    finalCells = cleanSmallConnectedRegions(finalCells, width, height);
+  }
+
+  // 7. 若是“容易完成”预设，执行孤岛合并
   if (preset === 'easy') {
-    finalCells = removeSingleIslands(cells, width, height);
+    finalCells = removeSingleIslands(finalCells, width, height);
   }
 
   // 收集最终实际用到的色卡索引

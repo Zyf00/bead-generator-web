@@ -44,6 +44,7 @@ export const CropModal: React.FC<CropModalProps> = ({ isOpen, onClose }) => {
   const [maxColors, setMaxColors] = useState(24);
   const [preset, setPreset] = useState<GenerationPreset>('detail');
   const [dithering, setDithering] = useState(true);
+  const [padding, setPadding] = useState<number>(1); // 默认留白 1 格，保证呼吸感与装裱美感
   const [isProcessing, setIsProcessing] = useState(false);
 
   // 临时生成的拼豆结果（携带当时的网格宽高，避免异步竞态越界）
@@ -157,6 +158,7 @@ export const CropModal: React.FC<CropModalProps> = ({ isOpen, onClose }) => {
           beadSize: '2.6mm',
           dithering,
           fitMode: quantizeFitMode,
+          padding,
         },
         palette,
         cropCanvas.width,
@@ -182,6 +184,7 @@ export const CropModal: React.FC<CropModalProps> = ({ isOpen, onClose }) => {
     preset,
     dithering,
     fitMode,
+    padding,
     palette,
   ]);
 
@@ -192,7 +195,7 @@ export const CropModal: React.FC<CropModalProps> = ({ isOpen, onClose }) => {
       runQuantization();
     }, 200);
     return () => clearTimeout(timer);
-  }, [imageSrc, croppedAreaPixels, targetWidth, targetHeight, maxColors, preset, dithering, runQuantization]);
+  }, [imageSrc, croppedAreaPixels, targetWidth, targetHeight, maxColors, preset, dithering, padding, runQuantization]);
 
   // 绘制即时拼豆预览
   useEffect(() => {
@@ -514,6 +517,50 @@ export const CropModal: React.FC<CropModalProps> = ({ isOpen, onClose }) => {
                   }`}
                 >
                   {fitMode === 'auto_grid' ? '58 边长比例板' : '58 × 58 大方板'}
+                </button>
+              </div>
+            </div>
+
+            {/* 边缘留白 (内边距) */}
+            <div>
+              <div className="flex justify-between items-center mb-1.5">
+                <label className="font-bold text-slate-800 text-xs">
+                  边缘留白 (内边距)
+                </label>
+                <span className="text-xs font-mono font-bold text-slate-600">
+                  {padding === 0 ? '无留白 (贴满)' : `四周各留 ${padding} 格`}
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  onClick={() => setPadding(0)}
+                  className={`btn-h-32 rounded-lg border text-xs transition-colors ${
+                    padding === 0
+                      ? 'border-orange-500 bg-orange-50 text-orange-700 font-bold'
+                      : 'border-slate-200 hover:border-slate-300 bg-white text-slate-700'
+                  }`}
+                >
+                  无留白
+                </button>
+                <button
+                  onClick={() => setPadding(1)}
+                  className={`btn-h-32 rounded-lg border text-xs transition-colors ${
+                    padding === 1
+                      ? 'border-orange-500 bg-orange-50 text-orange-700 font-bold'
+                      : 'border-slate-200 hover:border-slate-300 bg-white text-slate-700'
+                  }`}
+                >
+                  留白 1 格 (推荐)
+                </button>
+                <button
+                  onClick={() => setPadding(2)}
+                  className={`btn-h-32 rounded-lg border text-xs transition-colors ${
+                    padding === 2
+                      ? 'border-orange-500 bg-orange-50 text-orange-700 font-bold'
+                      : 'border-slate-200 hover:border-slate-300 bg-white text-slate-700'
+                  }`}
+                >
+                  留白 2 格
                 </button>
               </div>
             </div>

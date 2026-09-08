@@ -7,6 +7,7 @@ import { EditorCanvas } from './EditorCanvas';
 import { EditorSidebar } from './EditorSidebar';
 import { CropModal } from './CropModal';
 import { ExportModal } from './ExportModal';
+import { GeneratorStudio } from '../generator/GeneratorStudio';
 import { useEditorStore } from '../../store/useEditorStore';
 
 interface EditorWorkspaceProps {
@@ -14,9 +15,15 @@ interface EditorWorkspaceProps {
 }
 
 export function EditorWorkspace({ initialImportOpen }: EditorWorkspaceProps) {
-  const [isImportOpen, setIsImportOpen] = useState(initialImportOpen);
+  const [isImportOpen, setIsImportOpen] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
-  const { saveToDb } = useEditorStore();
+  const { workspaceMode, setWorkspaceMode, saveToDb } = useEditorStore();
+
+  useEffect(() => {
+    if (initialImportOpen) {
+      setWorkspaceMode('generate');
+    }
+  }, [initialImportOpen, setWorkspaceMode]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -26,6 +33,12 @@ export function EditorWorkspace({ initialImportOpen }: EditorWorkspaceProps) {
     return () => clearInterval(timer);
   }, [saveToDb]);
 
+  // 生成工作台模式 (优先主路径)
+  if (workspaceMode === 'generate') {
+    return <GeneratorStudio />;
+  }
+
+  // 精细微调编辑模式
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-slate-100">
       <EditorHeader

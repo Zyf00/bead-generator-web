@@ -35,6 +35,10 @@ export type CanvasViewMode = 'bead' | 'grid' | 'pixel';
 
 export type GenerationPreset = 'detail' | 'easy' | 'retro';
 
+export type WorkspaceMode = 'generate' | 'edit';
+
+export type GeneratorFitMode = 'contain' | 'auto_grid' | 'cover';
+
 export interface GenerationOptions {
   width: number;
   height: number;
@@ -42,8 +46,12 @@ export interface GenerationOptions {
   preset: GenerationPreset;
   beadSize: BeadSize;
   dithering: boolean;
-  fitMode?: 'contain' | 'cover';
+  fitMode?: GeneratorFitMode;
+  padding?: number;
   contrastBoost?: number;
+  removeBackground?: boolean;
+  mergeLowUsageColors?: boolean;
+  cleanSmallRegions?: boolean;
 }
 
 export interface BeadCountItem {

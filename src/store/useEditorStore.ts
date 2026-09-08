@@ -6,6 +6,8 @@ import {
   CanvasViewMode,
   EditorTool,
   BeadCountItem,
+  WorkspaceMode,
+  GenerationOptions,
 } from '../lib/types';
 import { STANDARD_PALETTE } from '../lib/palette/standardPalette';
 import { db } from '../lib/db/database';
@@ -27,11 +29,21 @@ interface EditorState {
   highlightColorIndex: number | null;
   highlightCells: number[];
 
+  // 工作台模式与生成源数据
+  workspaceMode: WorkspaceMode;
+  sourceImage: string | null;
+  sourceNaturalSize: { width: number; height: number } | null;
+  generationOptions: GenerationOptions;
+
   // 历史栈
   history: number[][];
   redoStack: number[][];
 
   // 操作
+  setWorkspaceMode: (mode: WorkspaceMode) => void;
+  setSourceImage: (src: string | null, naturalSize?: { width: number; height: number } | null) => void;
+  updateGenerationOptions: (patch: Partial<GenerationOptions>) => void;
+
   setActiveTool: (tool: EditorTool) => void;
   setActiveColorIndex: (index: number) => void;
   setViewMode: (mode: CanvasViewMode) => void;
@@ -89,8 +101,34 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   highlightColorIndex: null,
   highlightCells: [],
 
+  // 工作台模式与生成源数据初始状态
+  workspaceMode: 'generate',
+  sourceImage: null,
+  sourceNaturalSize: null,
+  generationOptions: {
+    width: DEFAULT_WIDTH,
+    height: DEFAULT_HEIGHT,
+    maxColors: 24,
+    preset: 'detail',
+    beadSize: '2.6mm',
+    dithering: true,
+    fitMode: 'contain',
+    padding: 1,
+    removeBackground: false,
+    mergeLowUsageColors: false,
+    cleanSmallRegions: false,
+  },
+
   history: [],
   redoStack: [],
+
+  setWorkspaceMode: (mode) => set({ workspaceMode: mode }),
+  setSourceImage: (src, naturalSize = null) =>
+    set({ sourceImage: src, sourceNaturalSize: naturalSize }),
+  updateGenerationOptions: (patch) =>
+    set((state) => ({
+      generationOptions: { ...state.generationOptions, ...patch },
+    })),
 
   setActiveTool: (tool) => set({ activeTool: tool }),
   setActiveColorIndex: (index) => set({ activeColorIndex: index }),
