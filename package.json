@@ -1,0 +1,55 @@
+{
+  "name": "bead-generator-web",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "predev": "node scripts/check-node-version.mjs",
+    "dev": "node scripts/dev.mjs",
+    "prebuild": "node scripts/check-node-version.mjs",
+    "build": "next build",
+    "prestart": "node scripts/check-node-version.mjs",
+    "start": "next start",
+    "prelint": "node scripts/check-node-version.mjs",
+    "lint": "eslint .",
+    "pretest": "node scripts/check-node-version.mjs",
+    "test": "vitest run",
+    "pretest:watch": "node scripts/check-node-version.mjs",
+    "test:watch": "vitest",
+    "pretest:coverage": "node scripts/check-node-version.mjs",
+    "test:coverage": "vitest run --coverage",
+    "pretest:e2e": "node scripts/check-node-version.mjs",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "dexie": "^4.4.5",
+    "lucide-react": "^1.42.0",
+    "next": "16.3.3",
+    "pdf-lib": "^1.17.1",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-easy-crop": "^6.2.3",
+    "tailwind-merge": "^3.6.0",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.57.0",
+    "@testing-library/jest-dom": "6.9.1",
+    "@testing-library/react": "16.3.1",
+    "@testing-library/user-event": "14.6.1",
+    "@types/node": "^20",
+    "@types/react": "19.2.7",
+    "@types/react-dom": "19.2.3",
+    "@vitest/coverage-v8": "4.1.10",
+    "eslint": "9.39.1",
+    "eslint-config-next": "16.3.3",
+    "jsdom": "27.4.0",
+    "postcss": "^8",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5",
+    "vitest": "4.1.10"
+  }
+}
